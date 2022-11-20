@@ -1,7 +1,7 @@
 # Find which data should go in which datamodel
-## This search will run very slow
+ This search will run very slow and is a VERY expensive search.
 
-`code(index=*
+``` index=*
 | fields index, tag, user, action, object_category
 | eval datamodel = if(tag="alert", index."."."alert", datamodel)
 | eval datamodel = if(tag="listening" AND tag="port", index."."."application_state_deprecated"."."."endpoint", datamodel)
@@ -31,4 +31,51 @@
 | eval datamodel = if(tag="web", index."."."web", datamodel)
 | rex field=datamodel "(?<index>[^\\.]+)\.(?<datamodel>.*)"
 | makemv delim="." datamodel
-| stats values(index) as index by datamodel)`
+| stats values(index) as index by datamodel) 
+```
+
+
+
+## Datamodel to Index/Sourcetype mapping 
+
+```
+| tstats values(sourcetype) as sourcetype WHERE index=* by index
+| mvexpand sourcetype
+| join sourcetype [
+| datamodel
+| rex field=_raw "\"modelName\"\s*\:\s*\"(?<modelName>[^\"]+)\""
+| search NOT modelName IN (Splunk_CIM_Validation)
+| fields modelName
+| table modelName
+| map maxsearches=60 search="tstats summariesonly=true count from datamodel=$modelName$ by sourcetype | eval modelName=\"$modelName$\"" ] | fields modelName index sourcetype
+| mvcombine sourcetype 
+```
+
+## Time delay by index 
+```
+index=*
+| eval indexed_time=strftime(_indextime,"%+")
+| eval time=strftime(_time,"%+")
+| eval delayEPOCH=_time-_indextime
+| eval delay=tostring(_time-_indextime, "duration")
+
+| table delay indexed_time time _raw 
+```
+
+## All scheduled searches 
+
+```
+| rest /services/saved/searches splunk_server=* | search is_scheduled=1 | dedup title | table title search description eai:acl:owner
+```
+
+## What Datamodels exist (with acceleration) 
+
+```
+| rest /services/data/models| table acceleration eai:appName title | rename eai:appName as App title as datamodel | eval acceleration=if(acceleration == 1, "True", "False”)
+```
+
+## All Time Searches 
+
+```
+index=_audit action="search" search="*" apiEndTime=*ZERO_TIME* | table user, apiStartTime, apiEndTime  savedsearch_name search 
+```
