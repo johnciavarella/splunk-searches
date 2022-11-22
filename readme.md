@@ -1,7 +1,8 @@
 # Find which data should go in which datamodel
  This search will run very slow and is a VERY expensive search.
 
-``` index=*
+```
+index=*
 | fields index, tag, user, action, object_category
 | eval datamodel = if(tag="alert", index."."."alert", datamodel)
 | eval datamodel = if(tag="listening" AND tag="port", index."."."application_state_deprecated"."."."endpoint", datamodel)
@@ -31,10 +32,8 @@
 | eval datamodel = if(tag="web", index."."."web", datamodel)
 | rex field=datamodel "(?<index>[^\\.]+)\.(?<datamodel>.*)"
 | makemv delim="." datamodel
-| stats values(index) as index by datamodel)
+| stats values(index) as index by datamodel
 ```
-
-
 
 ## Datamodel to Index/Sourcetype mapping
 
