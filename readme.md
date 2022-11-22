@@ -31,12 +31,12 @@
 | eval datamodel = if(tag="web", index."."."web", datamodel)
 | rex field=datamodel "(?<index>[^\\.]+)\.(?<datamodel>.*)"
 | makemv delim="." datamodel
-| stats values(index) as index by datamodel) 
+| stats values(index) as index by datamodel)
 ```
 
 
 
-## Datamodel to Index/Sourcetype mapping 
+## Datamodel to Index/Sourcetype mapping
 
 ```
 | tstats values(sourcetype) as sourcetype WHERE index=* by index
@@ -48,10 +48,10 @@
 | fields modelName
 | table modelName
 | map maxsearches=60 search="tstats summariesonly=true count from datamodel=$modelName$ by sourcetype | eval modelName=\"$modelName$\"" ] | fields modelName index sourcetype
-| mvcombine sourcetype 
+| mvcombine sourcetype
 ```
 
-## Time delay by index 
+## Time delay by index
 ```
 index=*
 | eval indexed_time=strftime(_indextime,"%+")
@@ -59,23 +59,30 @@ index=*
 | eval delayEPOCH=_time-_indextime
 | eval delay=tostring(_time-_indextime, "duration")
 
-| table delay indexed_time time _raw 
+| table delay indexed_time time _raw
 ```
 
-## All scheduled searches 
+## All scheduled searches
 
 ```
 | rest /services/saved/searches splunk_server=* | search is_scheduled=1 | dedup title | table title search description eai:acl:owner
 ```
 
-## What Datamodels exist (with acceleration) 
+## What Datamodels exist (with acceleration)
 
 ```
 | rest /services/data/models| table acceleration eai:appName title | rename eai:appName as App title as datamodel | eval acceleration=if(acceleration == 1, "True", "False”)
 ```
 
-## All Time Searches 
+## All Time Searches
 
 ```
-index=_audit action="search" search="*" apiEndTime=*ZERO_TIME* | table user, apiStartTime, apiEndTime  savedsearch_name search 
+index=_audit action="search" search="*" apiEndTime=*ZERO_TIME* | table user, apiStartTime, apiEndTime  savedsearch_name search
+```
+
+## Size of buckets on indexers
+Can be useful to see how much will archive off
+```
+| dbinspect  index=* | eval Size_GB=sizeOnDiskMB/1024
+| table index state Size_GB endEpoch startEpoch
 ```
