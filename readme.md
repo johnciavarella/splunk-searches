@@ -1,4 +1,50 @@
-# Find which data should go in which datamodel
+[Admin](#1-admin)
+
+[Getting insights into data](#2-getting-insights)
+
+[Misc](#3-misc)
+
+<h1 id="1-admin">Admin Searches</h1>
+
+## Time delay by index
+```
+index=*
+| eval indexed_time=strftime(_indextime,"%+")
+| eval time=strftime(_time,"%+")
+| eval delayEPOCH=_time-_indextime
+| eval delay=tostring(_time-_indextime, "duration")
+
+| table delay indexed_time time _raw
+```
+
+## All scheduled searches
+
+```
+| rest /services/saved/searches splunk_server=* | search is_scheduled=1 | dedup title | table title search description eai:acl:owner
+```
+
+## What Datamodels exist (with acceleration)
+
+```
+| rest /services/data/models| table acceleration eai:appName title | rename eai:appName as App title as datamodel | eval acceleration=if(acceleration == 1, "True", "False”)
+```
+
+## All Time Searches
+
+```
+index=_audit action="search" search="*" apiEndTime=*ZERO_TIME* | table user, apiStartTime, apiEndTime  savedsearch_name search
+```
+
+## Size of buckets on indexers
+Can be useful to see how much will archive off
+```
+| dbinspect  index=* | eval Size_GB=sizeOnDiskMB/1024
+| table index state Size_GB endEpoch startEpoch
+```
+
+<h1 id="2-getting-insights">Getting insights into data</h1>
+
+## Find which data should go in which datamodel
  This search will run very slow and is a VERY expensive search.
 
 ```
@@ -35,6 +81,8 @@ index=*
 | stats values(index) as index by datamodel
 ```
 
+<h1 id="3-misc">Misc</h1>
+
 ## Datamodel to Index/Sourcetype mapping
 
 ```
@@ -48,40 +96,4 @@ index=*
 | table modelName
 | map maxsearches=60 search="tstats summariesonly=true count from datamodel=$modelName$ by sourcetype | eval modelName=\"$modelName$\"" ] | fields modelName index sourcetype
 | mvcombine sourcetype
-```
-
-## Time delay by index
-```
-index=*
-| eval indexed_time=strftime(_indextime,"%+")
-| eval time=strftime(_time,"%+")
-| eval delayEPOCH=_time-_indextime
-| eval delay=tostring(_time-_indextime, "duration")
-
-| table delay indexed_time time _raw
-```
-
-## All scheduled searches
-
-```
-| rest /services/saved/searches splunk_server=* | search is_scheduled=1 | dedup title | table title search description eai:acl:owner
-```
-
-## What Datamodels exist (with acceleration)
-
-```
-| rest /services/data/models| table acceleration eai:appName title | rename eai:appName as App title as datamodel | eval acceleration=if(acceleration == 1, "True", "False”)
-```
-
-## All Time Searches
-
-```
-index=_audit action="search" search="*" apiEndTime=*ZERO_TIME* | table user, apiStartTime, apiEndTime  savedsearch_name search
-```
-
-## Size of buckets on indexers
-Can be useful to see how much will archive off
-```
-| dbinspect  index=* | eval Size_GB=sizeOnDiskMB/1024
-| table index state Size_GB endEpoch startEpoch
 ```
