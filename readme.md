@@ -1,3 +1,5 @@
+# Navigate 
+
 [Admin](#1-admin)
 
 [Getting insights into data](#2-getting-insights)
@@ -5,6 +7,31 @@
 [Misc](#3-misc)
 
 <h1 id="1-admin">Admin Searches</h1>
+
+## What indexes are used in saved searches
+
+```
+| rest splunk_server=* /servicesNS/-/-/configs/conf-savedsearches | rename eai:appName as app eai:acl.sharing as sharing | eval status = if(disabled=0, "Enabled" , "Disabled") | foreach cron_schedule action.email.to action.email.subject [eval <<FIELD>> = if(len('<<FIELD>>') > 0,'<<FIELD>>', "-")] | fields app title author search cron_schedule action.email action.email.subject action.email.to splunk_server sharing status | join app type=left [| rest splunk_server=local /servicesNS/-/-/apps/local | rename title as app label as app_label | table app app_label] | search status=enabled cron_schedule!="-" | where cron_schedule!="-" | eventstats dc(title) as concurrentCron by cron_schedule | table app app_label title author sharing cron_schedule concurrentCron search | sort -concurrentCron cron_schedule app title
+| search search=*index*
+| fields app search
+| rex field=search max_match=100 "index(?:\s=\s|=\s|\s=|=)(?<explict_index>.*?)(?:\s|$|\)|\'|\,)"
+| eval index_count=mvcount(explict_index)
+| eval explict_index=mvdedup(explict_index)
+| fields app index_count explict_index search
+```
+
+## Searches per index by time searches
+Get ths list of which indexes are getting searches by Number of searches, Oldest Events searched, Average, and Median. Useful for indexing strategy 
+
+```
+index="_audit"  OR field=TERM(info=completed) NOT typeahead | rex "search_id='(?<search_id>.*?)'"  | eval search_et=if(search_et="N/A",0,search_et)  | rex "', search='(?<thesearch>.*)"| rex max_match=100 field=thesearch "index(?:\s=\s|=\s|\s=|=)(?<index>.*?)(?:\s|$|\)|\'|\,)" | eval lookback=_time-search_et  | fields search_id lookback index
+| eval index=replace(index,"\"","")
+| eval lookback=round(lookback/60/60/24,0)
+| where lookback<1800
+| stats dc(search_id) AS numOfSearches max(lookback) as oldest_event_searched_Days avg(lookback) as Average_Lookback_Days median(lookback) as Median_Lookback_Days by index
+|  sort - numOfSearches
+| search index!=_*
+```
 
 ## Time delay by index
 ```
