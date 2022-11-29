@@ -14,10 +14,10 @@
 | rest splunk_server=* /servicesNS/-/-/configs/conf-savedsearches | rename eai:appName as app eai:acl.sharing as sharing | eval status = if(disabled=0, "Enabled" , "Disabled") | foreach cron_schedule action.email.to action.email.subject [eval <<FIELD>> = if(len('<<FIELD>>') > 0,'<<FIELD>>', "-")] | fields app title author search cron_schedule action.email action.email.subject action.email.to splunk_server sharing status | join app type=left [| rest splunk_server=local /servicesNS/-/-/apps/local | rename title as app label as app_label | table app app_label] | search status=enabled cron_schedule!="-" | where cron_schedule!="-" | eventstats dc(title) as concurrentCron by cron_schedule | table app app_label title author sharing cron_schedule concurrentCron search | sort -concurrentCron cron_schedule app title
 | search search=*index*
 | fields app search
-| rex field=search max_match=100 "index(?:\s=\s|=\s|\s=|=)(?<explict_index>.*?)(?:\s|$|\)|\'|\,)"
-| eval index_count=mvcount(explict_index)
-| eval explict_index=mvdedup(explict_index)
-| fields app index_count explict_index search
+| rex field=search max_match=100 "index(?:\s=\s|=\s|\s=|=)(?<index>.*?)(?:\s|$|\)|\'|\,)"
+| eval index_count=mvcount(index)
+| eval index=mvdedup(index)
+| fields app index_count index search
 ```
 
 ## Searches per index by time searches
