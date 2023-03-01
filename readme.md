@@ -125,7 +125,7 @@ index=*
 | mvcombine sourcetype
 ```
 
-## Datamodel Audit credit Hurricane Labs
+## Datamodel Audit credit [Hurricane Labs](https://hurricanelabs.com/splunk-tutorials/how-to-improve-your-data-model-acceleration-in-splunk/)
 
 ```
 | rest /servicesNS/-/-/admin/macros splunk_server=local 
