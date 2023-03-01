@@ -124,3 +124,50 @@ index=*
 | map maxsearches=60 search="tstats summariesonly=true count from datamodel=$modelName$ by sourcetype | eval modelName=\"$modelName$\"" ] | fields modelName index sourcetype
 | mvcombine sourcetype
 ```
+
+## Datamodel Audit credit Hurricane Labs
+
+```
+| rest /servicesNS/-/-/admin/macros splunk_server=local 
+| search title=Cim_*_indexes 
+| table title definition 
+| rex field=title "cim_(?<datamodel>\w+)_indexes" 
+| rename title AS macro 
+| join type=outer datamodel 
+    [| rest /servicesNS/nobody/-/datamodel/model splunk_server=local 
+    | table title acceleration 
+    | rex field=acceleration "\"enabled\":(?<acceleration_enabled>[^,\"]+)" 
+    | rex field=acceleration "\"earliest_time\":\"(?<acceleration_earliest>[^\"]+)" 
+    | fillnull acceleration_earliest value="N/A" 
+    | rename title AS datamodel 
+    | fields - acceleration] 
+| join type=outer datamodel 
+    [| `datamodel("Splunk_Audit", "Datamodel_Acceleration")` 
+    | `drop_dm_object_name("Datamodel_Acceleration")` 
+    | eval "size(MB)"=round(size/1048576,1), "retention(days)"=if(retention==0,"unlimited",round(retention/86400,1)), "complete(%)"=round(complete*100,1), "runDuration(s)"=round(runDuration,1) 
+    | sort 100 + datamodel 
+    | table datamodel,complete(%),size(MB),access_time 
+    | eval datamodel=if(datamodel="Endpoint.Filesystem","Endpoint",datamodel)] 
+| join type=outer datamodel 
+    [| rest splunk_server=local /servicesNS/-/-/configs/conf-savedsearches 
+    | search action.correlationsearch.label=* 
+    | rename action.correlationsearch.label AS rule_name 
+    | fields + title,rule_name,dispatch.earliest_time,dispatch.latest_time 
+    | join type=outer title 
+        [| rest splunk_server=local /servicesNS/-/-/configs/conf-savedsearches 
+        | fields + title,search,disabled] 
+    | rex max_match=0 field=search "datamodel\W{1,2}(?<datamodel>\w+)" 
+    | rex max_match=0 field=search "tstats.*?from datamodel=(?<datamodel>\w+)" 
+    | eval datamodel2=case(match(search, "src_dest_tstats"), mvappend("Network_Traffic", "Intrusion_Detection", "Web"), match(search, "(access_tracker|inactive_account_usage)"), "Authentication", match(search, "malware_operations_tracker"), "Malware", match(search, "(primary_functions|listeningports|localprocesses|services)_tracker"), "Application_State", match(search, "useraccounts_tracker"), "Compute_Inventory") 
+    | eval datamodel=mvappend(datamodel, datamodel2) 
+    | search datamodel=* 
+    | mvexpand datamodel 
+    | eval uses_tstats=if(match(search, ".*tstats.*"), "yes", "no") 
+    | eval enabled=if(disabled==0, "Yes", "No") 
+    | search enabled=yes 
+    | stats count(rule_name) as correlation_searches_enabled by datamodel 
+    | fillnull correlation_searches_enabled value="0"] 
+| fieldformat access_time=strftime(access_time, "%m/%d/%Y %H:%M:%S") 
+| table datamodel acceleration_enabled, acceleration_earliest, macro, definition, complete(%), size(MB), correlation_searches_enabled, access_time 
+| sort -acceleration_enabled definition -complete(%) size(MB)
+```
