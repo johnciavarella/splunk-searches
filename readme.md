@@ -4,7 +4,9 @@
 
 [Getting insights into data](#2-getting-insights)
 
-[Misc](#3-misc)
+[Windows Sec Event](#3-winevents)
+
+[Misc](#4-misc)
 
 <h1 id="1-admin">Admin Searches</h1>
 
@@ -108,7 +110,43 @@ index=*
 | stats values(index) as index by datamodel
 ```
 
-<h1 id="3-misc">Misc</h1>
+<h1 id="3-winevents">Windows Sec Event</h1>
+
+##  Windows Event Blacklisting for Splunk
+Requires [Windows Add-On for Splunk](https://splunkbase.splunk.com/app/742).
+Add the following to ```inputs.conf``` file.
+
+```
+blacklist1 = EventCode="(4662|566)" Message="Object Type:(?!\s*groupPolicyContainer)"
+blacklist2 = EventCode="(4656|4670|4663|4703|4658|4688)" Message="Account Name:(\W+\w+$)"
+blacklist3 = EventCode="4624" Message="An account was successfully logged on"
+blacklist4 = EventCode="(4688|4689)" Message="%SplunkUniversalForwarder%"
+blacklist5 = EventCode="6278" Message="Network Policy Server granted full access to a user because the host met the defined health policy."
+```
+
+##  Windows Event Clean Up in Splunk
+Add the following to ```props.conf``` file.
+If running on Splunk Cloud, this requires a Support ticket to implement on Splunk Cloud Indexers
+
+``` 
+[source::WinEventLog:Security]
+SEDCMD-windows_security_event_formater = s/(?m)(^\s+[^:]+\:)\s+-?$/\1/g
+SEDCMD-windows_security_event_formater_null_sid_id = s/(?m)(^\s+[^:]+\:)\s+-?$/\1/g s/(?m)(^\s+[^:]+\:)\s+-?$/\1/g s/(?m)(\:)(\s+NULL SID)$/\1/g s/(?m)(ID\:)(\s+0x0)$/\1/g
+SEDCMD-clean_info_text_from_winsecurity_events_this_event = s/This event is generated[\S\s\r\n]+$//g
+SEDCMD-clean_info_text_from_winsecurity_events_certificate_information = s/Certificate information is only[\S\s\r\n]+$//g
+SEDCMD-cleansrcip = s/(Source Network Address:    (\:\:1|127\.0\.0\.1))/Source Network Address:/
+SEDCMD-cleansrcport = s/(Source Port:\s*0)/Source Port:/
+SEDCMD-remove-ffff_ipv6 = s/::ffff://g
+SEDCMD-clean_info_text_from_winsecurity_events_token_elevation_type = s/Token Elevation Type indicates[\S\s\r\n]+$//g
+SEDCMD-clean_network_share_summary = s/(?ms)(A network share object was checked to see whether.*$)//g
+SEDCMD-clean_authentication_summary = s/(?ms)(The computer attempted to validate the credentials.*$)//g
+SEDCMD-clean_local_ipv6 = s/(?ms)(::1)//g
+
+[source::WinEventLog:System]
+SEDCMD-clean_info_text_from_winsystem_events_this_event = s/This event is generated[\S\s\r\n]+$//g
+```
+
+<h1 id="4-misc">Misc</h1>
 
 ## Datamodel to Index/Sourcetype mapping
 
