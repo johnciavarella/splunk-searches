@@ -4,7 +4,9 @@
 
 [Getting insights into data](#2-getting-insights)
 
-[Misc](#3-misc)
+[Windows Sec Event](#3-winevents)
+
+[Misc](#4-misc)
 
 <h1 id="1-admin">Admin Searches</h1>
 
@@ -108,7 +110,43 @@ index=*
 | stats values(index) as index by datamodel
 ```
 
-<h1 id="3-misc">Misc</h1>
+<h1 id="3-winevents">Windows Sec Event</h1>
+
+##  Windows Event Blacklisting for Splunk
+Requires [Windows Add-On for Splunk](https://splunkbase.splunk.com/app/742).
+Add the following to ```inputs.conf``` file.
+
+```
+blacklist1 = EventCode="(4662|566)" Message="Object Type:(?!\s*groupPolicyContainer)"
+blacklist2 = EventCode="(4656|4670|4663|4703|4658|4688)" Message="Account Name:(\W+\w+$)"
+blacklist3 = EventCode="4624" Message="An account was successfully logged on"
+blacklist4 = EventCode="(4688|4689)" Message="%SplunkUniversalForwarder%"
+blacklist5 = EventCode="6278" Message="Network Policy Server granted full access to a user because the host met the defined health policy."
+```
+
+##  Windows Event Clean Up in Splunk
+Add the following to ```props.conf``` file.
+If running on Splunk Cloud, this requires a Support ticket to implement on Splunk Cloud Indexers
+
+``` 
+[source::WinEventLog:Security]
+SEDCMD-windows_security_event_formater = s/(?m)(^\s+[^:]+\:)\s+-?$/\1/g
+SEDCMD-windows_security_event_formater_null_sid_id = s/(?m)(^\s+[^:]+\:)\s+-?$/\1/g s/(?m)(^\s+[^:]+\:)\s+-?$/\1/g s/(?m)(\:)(\s+NULL SID)$/\1/g s/(?m)(ID\:)(\s+0x0)$/\1/g
+SEDCMD-clean_info_text_from_winsecurity_events_this_event = s/This event is generated[\S\s\r\n]+$//g
+SEDCMD-clean_info_text_from_winsecurity_events_certificate_information = s/Certificate information is only[\S\s\r\n]+$//g
+SEDCMD-cleansrcip = s/(Source Network Address:    (\:\:1|127\.0\.0\.1))/Source Network Address:/
+SEDCMD-cleansrcport = s/(Source Port:\s*0)/Source Port:/
+SEDCMD-remove-ffff_ipv6 = s/::ffff://g
+SEDCMD-clean_info_text_from_winsecurity_events_token_elevation_type = s/Token Elevation Type indicates[\S\s\r\n]+$//g
+SEDCMD-clean_network_share_summary = s/(?ms)(A network share object was checked to see whether.*$)//g
+SEDCMD-clean_authentication_summary = s/(?ms)(The computer attempted to validate the credentials.*$)//g
+SEDCMD-clean_local_ipv6 = s/(?ms)(::1)//g
+
+[source::WinEventLog:System]
+SEDCMD-clean_info_text_from_winsystem_events_this_event = s/This event is generated[\S\s\r\n]+$//g
+```
+
+<h1 id="4-misc">Misc</h1>
 
 ## Datamodel to Index/Sourcetype mapping
 
@@ -123,4 +161,51 @@ index=*
 | table modelName
 | map maxsearches=60 search="tstats summariesonly=true count from datamodel=$modelName$ by sourcetype | eval modelName=\"$modelName$\"" ] | fields modelName index sourcetype
 | mvcombine sourcetype
+```
+
+## Datamodel Audit credit [Hurricane Labs](https://hurricanelabs.com/splunk-tutorials/how-to-improve-your-data-model-acceleration-in-splunk/)
+
+```
+| rest /servicesNS/-/-/admin/macros splunk_server=local 
+| search title=Cim_*_indexes 
+| table title definition 
+| rex field=title "cim_(?<datamodel>\w+)_indexes" 
+| rename title AS macro 
+| join type=outer datamodel 
+    [| rest /servicesNS/nobody/-/datamodel/model splunk_server=local 
+    | table title acceleration 
+    | rex field=acceleration "\"enabled\":(?<acceleration_enabled>[^,\"]+)" 
+    | rex field=acceleration "\"earliest_time\":\"(?<acceleration_earliest>[^\"]+)" 
+    | fillnull acceleration_earliest value="N/A" 
+    | rename title AS datamodel 
+    | fields - acceleration] 
+| join type=outer datamodel 
+    [| `datamodel("Splunk_Audit", "Datamodel_Acceleration")` 
+    | `drop_dm_object_name("Datamodel_Acceleration")` 
+    | eval "size(MB)"=round(size/1048576,1), "retention(days)"=if(retention==0,"unlimited",round(retention/86400,1)), "complete(%)"=round(complete*100,1), "runDuration(s)"=round(runDuration,1) 
+    | sort 100 + datamodel 
+    | table datamodel,complete(%),size(MB),access_time 
+    | eval datamodel=if(datamodel="Endpoint.Filesystem","Endpoint",datamodel)] 
+| join type=outer datamodel 
+    [| rest splunk_server=local /servicesNS/-/-/configs/conf-savedsearches 
+    | search action.correlationsearch.label=* 
+    | rename action.correlationsearch.label AS rule_name 
+    | fields + title,rule_name,dispatch.earliest_time,dispatch.latest_time 
+    | join type=outer title 
+        [| rest splunk_server=local /servicesNS/-/-/configs/conf-savedsearches 
+        | fields + title,search,disabled] 
+    | rex max_match=0 field=search "datamodel\W{1,2}(?<datamodel>\w+)" 
+    | rex max_match=0 field=search "tstats.*?from datamodel=(?<datamodel>\w+)" 
+    | eval datamodel2=case(match(search, "src_dest_tstats"), mvappend("Network_Traffic", "Intrusion_Detection", "Web"), match(search, "(access_tracker|inactive_account_usage)"), "Authentication", match(search, "malware_operations_tracker"), "Malware", match(search, "(primary_functions|listeningports|localprocesses|services)_tracker"), "Application_State", match(search, "useraccounts_tracker"), "Compute_Inventory") 
+    | eval datamodel=mvappend(datamodel, datamodel2) 
+    | search datamodel=* 
+    | mvexpand datamodel 
+    | eval uses_tstats=if(match(search, ".*tstats.*"), "yes", "no") 
+    | eval enabled=if(disabled==0, "Yes", "No") 
+    | search enabled=yes 
+    | stats count(rule_name) as correlation_searches_enabled by datamodel 
+    | fillnull correlation_searches_enabled value="0"] 
+| fieldformat access_time=strftime(access_time, "%m/%d/%Y %H:%M:%S") 
+| table datamodel acceleration_enabled, acceleration_earliest, macro, definition, complete(%), size(MB), correlation_searches_enabled, access_time 
+| sort -acceleration_enabled definition -complete(%) size(MB)
 ```
