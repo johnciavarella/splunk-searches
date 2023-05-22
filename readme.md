@@ -73,6 +73,15 @@ Can be useful to see how much will archive off
 
 <h1 id="2-getting-insights">Getting insights into data</h1>
 
+## Presence of fields by EventID for Windows 
+This search is expensive and may push past limits on searches. Try using event sampling 
+```
+index=windows | stats c by EventID | fields EventID
+| map maxsearches=9999 search="search index=windows EventID=$EventID$ | fieldsummary |fields field | mvcombine field | eval EventID=$EventID$ | table EventID field"
+| mvexpand field
+| mvcombine EventID | fields field EventID
+```
+
 ## Find which data should go in which datamodel
  This search will run very slow and is a VERY expensive search.
 
