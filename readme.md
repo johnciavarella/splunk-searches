@@ -6,7 +6,7 @@
 
 [Windows Sec Event](#3-winevents)
 
-[Data Ingestion Insights](#4-gdi)
+[Data Ingestion Insights](#4-GDI)
 
 [Misc](#5-misc)
 
