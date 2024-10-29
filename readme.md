@@ -6,7 +6,9 @@
 
 [Windows Sec Event](#3-winevents)
 
-[Misc](#4-misc)
+[Data Ingestion Insights](#4-gdi)
+
+[Misc](#5-misc)
 
 <h1 id="1-admin">Admin Searches</h1>
 
@@ -155,7 +157,64 @@ SEDCMD-clean_local_ipv6 = s/(?ms)(::1)//g
 SEDCMD-clean_info_text_from_winsystem_events_this_event = s/This event is generated[\S\s\r\n]+$//g
 ```
 
-<h1 id="4-misc">Misc</h1>
+<h1 id="3-GDI">Data Ingestion Insights</h1>
+
+## Data Parsing Issues 
+```
+index=_internal sourcetype=splunkd component=DateParserVerbose log_level=WARN 
+| rex "Context:\s+source(?:=|::)(?<data_source>[^\|]+)\|host(?:=|::)(?<data_host>[^\|]+)\|(?<data_sourcetype>[^\|]+)" 
+| stats count values(data_source) values(data_host) dc(data_source) dc(data_host) BY data_sourcetype
+```
+
+## Truncation issues
+
+```
+index=_internal sourcetype=splunkd component=LineBreakingProcessor 
+| extract 
+| rex "because\slimit\sof\s(?<limit>\S+).*>=\s(?<actual>\S+)" 
+| stats count avg(actual) max(actual) values(data_source) values(data_host) dc(data_source) dc(data_host) BY data_sourcetype, limit 
+| eval avg(actual)=round('avg(actual)')
+```
+
+## Line merging issues
+
+```
+index=_internal sourcetype=splunkd component=Aggregator* NOT "Too many events * with the same timestamp" 
+| rex "\s-\s(?<message_content>.*?)\s-\sdata" 
+| extract 
+| stats count values(message_content) values(data_source) values(data_host) dc(data_source), dc(data_host) BY data_sourcetype
+```
+
+## Data Feed Delays (>30mins)
+
+```
+| metadata type=sourcetypes index=* 
+| search 
+    [| inputlookup sta_all_sourcetypes.csv 
+    | fields sourcetype ] 
+| sort 0 - totalCount 
+| eval Delay=now()-recentTime 
+| rangemap default=severe field=Delay low=0-1800 
+| convert ctime(recentTime) AS "Last Indexed" 
+| table range, sourcetype, "Last Indexed", Delay, totalCount 
+| eval Delay=tostring(Delay,"duration") 
+| eval totalCount=tostring(totalCount, "commas") 
+| rename totalCount AS Events, range AS Status sourcetype AS Sourcetype 
+| sort + "Last Indexed"
+```
+
+## Data With Future Timestamps
+
+```
+| tstats count WHERE index=* earliest=+30min@m latest=2147483647 GROUPBY sourcetype source host 
+| join type=left sourcetype 
+    [| metadata type=sourcetypes index=* 
+    | convert ctime(*Time)] 
+| stats values(host) AS Hosts values(sourcetype) AS Sourcetype values(lastTime) AS "Furthest Out Event"
+```
+
+
+<h1 id="5-misc">Misc</h1>
 
 ## Datamodel to Index/Sourcetype mapping
 
