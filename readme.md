@@ -159,6 +159,44 @@ SEDCMD-clean_info_text_from_winsystem_events_this_event = s/This event is genera
 
 <h1 id="3-GDI">Data Ingestion Insights</h1>
 
+## This will give you indexes, and their sourcetypes with top 10 reporting hosts per index.
+```
+| tstats  values(host) as host where index=* by index | mvexpand host  
+| top host by index limit=10
+| fields index host
+| rename host as "top_10_hosts"
+| mvcombine top_10_hosts
+``` Can be run independently to get the index to sourcetype mappings```
+| join index [ | tstats values(sourcetype) as sourcetype where index=*  by index  | mvexpand sourcetype ]
+| fields index sourcetype top_10_hosts
+```7 day avg by index```
+| join [ search index=_internal source=*license_usage.log* idx="*"
+| timechart sum(b) as sum_b by idx span=1d limit=999
+| addcoltotals | tail 1 | foreach * [ eval <<FIELD>>=(round(<<FIELD>>/1024/1024/1024,3)). " gb" ] | transpose | rename column AS index | rename "row 1" AS 7_day_gb_avg | regex index != "^_" ]
+```
+
+## Sources by index
+```
+| tstats values(sourcetype) as sourcetype where index=*  by index
+```
+
+## 7 Day avg ingest per index 
+```
+index=_internal source=*license_usage.log* idx="*"
+| timechart sum(b) as sum_b by idx span=1d limit=999
+| addcoltotals | tail 1 | foreach * [ eval <<FIELD>>=(round(<<FIELD>>/1024/1024/1024,3)). " gb" ] | transpose | rename column AS index | rename "row 1" AS 7_day_gb_avg | regex index != "^_" 
+```
+
+## Top 10 Hosts by Sourcetype and Index
+```
+| tstats  values(host) as host where index=* by index | mvexpand host  
+| top host by index limit=10
+| fields index host
+| rename host as "top_10_hosts"
+| mvcombine top_10_hosts
+```
+
+
 ## Data Parsing Issues 
 ```
 index=_internal sourcetype=splunkd component=DateParserVerbose log_level=WARN 
